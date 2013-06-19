@@ -181,7 +181,7 @@ curses.resize_term(64,53)
 curses.noecho()
 curses.cbreak()
 curses.curs_set(0)
-screen.nodelay(0)
+screen.nodelay(1)
 screen.keypad(0)
 screen.clear()
 
