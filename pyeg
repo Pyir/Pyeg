@@ -1,18 +1,15 @@
 #!/usr/bin/python
 
 
-##### CONF and CONNECT ########################################
-# requires /etc/pyx.conf with mysql DB connect info (for now):
-# host=
-# db=
-# user=
-# passwd=
+##### CONF and CONNECT or DIE #############################
+# Change for sys.args, etc
 
 try:
         cf = open('/etc/pyx.conf','r')
 except Exception:
         print 'Can\'t open or read /etc/pyx.conf'
         exit()
+
 for l in cf:
         if 'host=' in l:
                 l = l.split('=')
@@ -37,6 +34,7 @@ except Exception:
         exit()
 
 import _mysql
+
 try:
         db=_mysql.connect(host=hn,db=db,user=un,passwd=pw)
 except Exception as e:
@@ -48,47 +46,8 @@ except Exception as e:
 
 import curses,time,signal,sys,datetime
 
-# Overloading WINCH, don't hate me
-def _winch(signum, frame):
-        return 0
-def _iup(signum, frame):
-        screen.keypad(0)
-        curses.echo()
-        curses.nocbreak()
-        curses.endwin()
-        exit()
-signal.signal(signal.SIGINT, _iup)
-signal.signal(signal.SIGWINCH, _winch)
-sys.stdout.write("\x1b[8;64;52t")
 
-#########################################################
-
-import curses,time,signal,sys,datetime
-
-# Overloading WINCH, don't hate me
-def _winch(signum, frame):
-        return 0
-def _iup(signum, frame):
-        screen.keypad(0)
-        curses.echo()
-        curses.nocbreak()
-        curses.endwin()
-        exit()
-signal.signal(signal.SIGINT, _iup)
-signal.signal(signal.SIGWINCH, _winch)
-sys.stdout.write("\x1b[8;64;52t")
-
-screen = curses.initscr()
-curses.resize_term(64,52)
-curses.noecho()
-curses.cbreak()
-curses.curs_set(0)
-screen.nodelay(0)
-screen.keypad(0)
-screen.clear()
-
-
-while 1:
+def getdat():
         dt = datetime.datetime.now()
         tm = dt.strftime('%H:%M:%S')
         dt = dt.strftime('%Y/%m/%d')
@@ -105,7 +64,7 @@ while 1:
                         rc += 1
                 except Exception:
                         rc += 1
-
+        global evc
         evc = []
         for s in shi:
                 qrystr = "select count(cid) from event where timestamp >= '"+dt+"' and sid ='"+s[0]
@@ -128,80 +87,113 @@ while 1:
         screen.addstr(63,1,tm)
         screen.refresh()
 
-        #### PAINT LOOP
-        for slp in range(120):
-                ### main bars
-                y = 0
-                cc = 97
-                for e in evc:
-                        last = e[2][-1]
-                        bar = int(round(e[1] / 30.0))
-                        if bar == 0:
-                                bar = 1.0
-                        bars = int(round(last / bar))
-                        if bars > 30:
-                                bars = 30
-                        grp = '<'+'|'*bars+' '*(30-bars)+'>'
-                        screen.addstr(y,0,chr(cc)+': '+e[0][:20])
-                        screen.addstr(y,20,grp)
 
-                        # Walk line keys(a-zA-Z0-9)
-                        y +=1
-                        cc += 1
-                        if cc == 123:
-                                cc = 65
-                        if cc == 91:
-                                cc = 48
-                        if cc == 58:
-                                break
+def pbars():
+        #### PAINT BARS
+        y = 0
+        cc = 97
+        for e in evc:
+                last = e[2][-1]
+                bar = int(round(e[1] / 30.0))
+                if bar == 0:
+                        bar = 1.0
+                bars = int(round(last / bar))
+                if bars > 30:
+                        bars = 30
+                grp = '<'+'|'*bars+' '*(30-bars)+'>'
+                screen.addstr(y,0,chr(cc)+': '+e[0][:20])
+                screen.addstr(y,20,grp)
 
+                # Walk line keys(a-zA-Z0-9)
+                y +=1
+                cc += 1
+                if cc == 123:
+                        cc = 65
+                if cc == 91:
+                        cc = 48
+                if cc == 58:
+                        break
                 screen.refresh()
-                #### Capture Keypress
-                kp = screen.getch()
 
-                # Align ilu with key pressed
-                ilu = None
-                if kp >= 97 and kp <= 122:
-                        ilu = str(kp - 97)
-                if kp >= 48 and kp <= 57:
-                        ilu = str(kp + 4)
-                if kp >= 65 and kp <= 90:
-                        ilu = str(kp - 39)
-
-                # check for ESC, remove graph
-                if kp == 27:
-                        # ESC reset kp,break sleep, restart
-                        kp,ilu = None,None
-                        try:
-                                gw.erase()
-                        except Exception:
-                                # will except if no subwindows was ever created
-                                pass
-
-                # If I got a valid key, draw graph
-                if ilu:
-                        ilu = int(ilu)
-                        top = float(evc[ilu][1])
-                        if top == 0:
-                                top = float(1)
-                        gw = curses.newwin(16,50,5,2)
-                        gw.box()
-                        gw.addstr(1,1,evc[ilu][0])
-                        gw.addstr(2,1,'peek:'+str(evc[ilu][1])+' cur:'+str(evc[ilu][2][-1]))
-                        gw.addstr(1,42,'cur->')
-                        x = 47
-                        # offsetting x,y by for box
-                        for v in evc[ilu][2][-46:]:
-                                ticks = int(round(v/top*10))
-                                for y in range(14,14-ticks,-1):
-                                        gw.addstr(y,x,'-')
-                                        gw.refresh()
-                                x -= 1
+def pgraph(ilu):
+        top = float(evc[ilu][1])
+        if top == 0:
+                top = float(1)
+        global gw
+        gw = curses.newwin(16,50,5,2)
+        gw.box()
+        gw.addstr(1,1,evc[ilu][0])
+        gw.addstr(2,1,'peek:'+str(evc[ilu][1])+' cur:'+str(evc[ilu][2][-1]))
+        gw.addstr(1,42,'cur->')
+        x = 47
+        # offsetting x,y by for box
+        for v in evc[ilu][2][-46:]:
+                ticks = int(round(v/top*10))
+                for y in range(14,14-ticks,-1):
+                        gw.addstr(y,x,'-')
                         gw.refresh()
-                time.sleep(.5)
-                # Done sleeping, requery
+                x -= 1
+        gw.refresh()
 
-# Catch all
+
+def sloop():
+        # sleep loop, 60 sec catching subgraph or esc
+        for slp in range(120):
+                kp = screen.getch()
+                if kp >= 97 and kp <= 122:
+                        pgraph(kp - 97)
+                if kp >= 48 and kp <= 57:
+                        pgraph(kp + 4)
+                if kp >= 65 and kp <= 90:
+                        pgraph(kp - 39)
+                if kp == 27:
+                        gw.erase()
+                        pbars()
+                time.sleep(.5)
+
+
+# Overloading WINCH, Capturing CTRL+C for clean exit
+def _winch(signum, frame):
+        # Neutering WINCH
+        return 0
+
+def _iup(signum, frame):
+        # Clean exit for ctrl_c
+        screen.keypad(0)
+        curses.echo()
+        curses.nocbreak()
+        curses.endwin()
+        exit()
+
+
+###### MAIN ######
+
+# Overloading CTRL_C
+signal.signal(signal.SIGINT, _iup)
+signal.signal(signal.SIGWINCH, _winch)
+
+# Resize term
+sys.stdout.write("\x1b[8;64;53t")
+
+# Init curses win
+screen = curses.initscr()
+curses.resize_term(64,53)
+curses.noecho()
+curses.cbreak()
+curses.curs_set(0)
+screen.nodelay(0)
+screen.keypad(0)
+screen.clear()
+
+# Fetch, print and catch keys until CTRL_C
+while 1:
+        getdat()
+        pbars()
+        sloop()
+
+
+
+# Imposibru!
 screen.keypad(0)
 curses.echo()
 curses.nocbreak()
